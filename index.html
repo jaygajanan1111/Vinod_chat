@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Universal AI Chat</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gemini: {
+                            light: '#f0f4f9',
+                            dark: '#131314',
+                            sidebar: '#e9eef6',
+                            sidebarDark: '#1e1f20',
+                            accent: '#0b57d0',
+                            accentDark: '#a8c7fa'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        /* Base styles & Mobile constraints */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100dvh; /* Dynamic viewport height for mobile browsers */
+            overflow: hidden; /* Prevent body scroll, handle scrolling in containers */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Hide app initially to show loader */
+        #app { display: none; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+
+        /* Markdown Styles */
+        .prose pre {
+            background-color: #1e293b;
+            color: #f8fafc;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+        .prose code {
+            font-family: monospace;
+            background-color: rgba(150, 150, 150, 0.2);
+            padding: 0.1rem 0.3rem;
+            border-radius: 0.25rem;
+        }
+        .prose p { margin-bottom: 0.75rem; }
+        .prose p:last-child { margin-bottom: 0; }
+        .prose ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose a { color: #3b82f6; text-decoration: underline; }
+
+        /* Typing cursor */
+        .typing-cursor::after {
+            content: '▋';
+            display: inline-block;
+            animation: blink 1s step-start infinite;
+            margin-left: 2px;
+            color: #3b82f6;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        /* Textarea auto-resize */
+        textarea {
+            resize: none;
+            overflow-y: hidden;
+            min-height: 44px;
+            max-height: 200px;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gemini-dark text-gray-900 dark:text-gray-100 transition-colors duration-200">
+
+    <div id="loading" class="flex items-center justify-center h-[100dvh] w-full text-lg font-semibold text-gray-500">
+        <i class="fa-solid fa-spinner fa-spin mr-3"></i> Loading App...
+    </div>
+
+    <div id="app" class="flex h-[100dvh] w-full">
+        
+        <div id="sidebar-backdrop" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+        <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-72 bg-gemini-sidebar dark:bg-gemini-sidebarDark transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col h-full border-r border-gray-200 dark:border-gray-800">
+            <div class="p-4 flex items-center justify-between">
+                <button onclick="createNewChat()" class="flex-1 flex items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 py-2 px-4 rounded-full shadow-sm text-sm font-medium transition-colors border border-gray-200 dark:border-gray-700">
+                    <i class="fa-solid fa-plus text-gemini-accent dark:text-gemini-accentDark"></i>
+                    New Chat
+                </button>
+                <button class="md:hidden ml-2 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-3 py-2 space-y-1" id="chat-list">
+                </div>
+
+            <div class="p-3 border-t border-gray-200 dark:border-gray-800 space-y-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <button onclick="openModal('system-prompt-modal')" class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
+                    <i class="fa-solid fa-brain w-5 text-center"></i> System Prompt
+                </button>
+                <button onclick="openModal('settings-modal')" class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
+                    <i class="fa-solid fa-gear w-5 text-center"></i> Settings
+                </button>
+                <button onclick="toggleTheme()" class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
+                    <i id="theme-icon" class="fa-solid fa-moon w-5 text-center"></i> 
+                    <span id="theme-text">Dark Mode</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col h-full w-full bg-white dark:bg-gemini-dark relative min-w-0">
+            
+            <header class="flex items-center justify-between p-4 bg-white dark:bg-gemini-dark md:bg-transparent md:dark:bg-transparent z-10 sticky top-0">
+                <div class="flex items-center gap-3">
+                    <button class="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 md:hidden" onclick="toggleSidebar()">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                    <h1 class="text-lg font-semibold truncate max-w-[200px] sm:max-w-xs md:max-w-md" id="current-chat-title">New Chat</h1>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md hidden sm:block truncate max-w-[150px]" id="current-model-display">
+                    Model
+                </div>
+            </header>
+
+            <div id="messages-container" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 pb-32 flex flex-col items-center">
+                <div id="welcome-screen" class="flex flex-col items-center justify-center h-full text-center max-w-lg opacity-80">
+                    <div class="w-16 h-16 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full flex items-center justify-center mb-6 shadow-lg">
+                        <i class="fa-solid fa-sparkles text-white text-2xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold mb-2">Hello there.</h2>
+                    <p class="text-gray-500 dark:text-gray-400 mb-6">How can I help you today?</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                        <button onclick="prefillInput('Write a short HTML boilerplate')" class="p-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Write a short HTML boilerplate</button>
+                        <button onclick="prefillInput('Explain quantum computing to a 5 year old')" class="p-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Explain quantum computing</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute bottom-0 left-0 right-0 p-3 sm:p-6 bg-gradient-to-t from-white via-white to-transparent dark:from-gemini-dark dark:via-gemini-dark dark:to-transparent">
+                <div class="max-w-3xl mx-auto relative">
+                    <div class="flex items-end gap-2 bg-gray-100 dark:bg-gray-800 rounded-2xl md:rounded-3xl p-2 shadow-sm border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-blue-500/50 transition-shadow">
+                        <textarea 
+                            id="message-input" 
+                            rows="1" 
+                            placeholder="Enter a prompt here..." 
+                            class="flex-1 bg-transparent border-none outline-none py-3 px-4 text-gray-900 dark:text-gray-100 placeholder-gray-500"
+                            oninput="autoResizeTextarea(this)"
+                            onkeydown="handleEnter(event)"
+                        ></textarea>
+                        <button id="send-button" onclick="sendMessage()" class="p-3 rounded-full bg-gemini-accent dark:bg-gemini-accentDark text-white dark:text-gray-900 hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed mb-0.5 mr-0.5 shrink-0 flex items-center justify-center w-11 h-11">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                        <button id="stop-button" onclick="stopGeneration()" class="hidden p-3 rounded-full bg-red-500 text-white hover:opacity-90 transition-opacity mb-0.5 mr-0.5 shrink-0 flex items-center justify-center w-11 h-11">
+                            <i class="fa-solid fa-stop"></i>
+                        </button>
+                    </div>
+                    <div class="text-center mt-2 text-xs text-gray-400">
+                        AI can make mistakes. Consider verifying important information.
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90dvh]">
+                <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h3 class="text-xl font-semibold">Settings</h3>
+                    <button onclick="closeModal('settings-modal')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-5 overflow-y-auto space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">OpenRouter API Key <span class="text-red-500">*</span></label>
+                        <input type="password" id="api-key-input" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 outline-none focus:border-blue-500 dark:focus:border-blue-500 transition-colors" placeholder="sk-or-v1-...">
+                        <p class="text-xs text-gray-500 mt-1">Stored securely in your browser's localStorage.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Model Name</label>
+                        <input type="text" id="model-input" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-2.5 outline-none focus:border-blue-500 dark:focus:border-blue-500 transition-colors" placeholder="deepseek/deepseek-r1:free">
+                    </div>
+                </div>
+                <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                    <button onclick="saveSettings()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium transition-colors">Save Changes</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="system-prompt-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90dvh]">
+                <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h3 class="text-xl font-semibold">System Prompt</h3>
+                    <button onclick="closeModal('system-prompt-modal')" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-5 overflow-y-auto">
+                    <label class="block text-sm font-medium mb-2">Instructions for the AI</label>
+                    <textarea id="system-prompt-input" rows="6" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-3 outline-none focus:border-blue-500 dark:focus:border-blue-500 transition-colors resize-none" placeholder="You are a helpful AI assistant..."></textarea>
+                </div>
+                <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+                    <button onclick="saveSystemPrompt()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-medium transition-colors">Save Instructions</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Configuration & State ---
+        const DEFAULT_MODEL = "deepseek/deepseek-r1:free";
+        const API_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+        
+        let state = {
+            apiKey: '',
+            model: DEFAULT_MODEL,
+            systemPrompt: '',
+            theme: 'light',
+            chats: [],       // Array of { id, title, messages: [] }
+            currentChatId: null,
+            isGenerating: false,
+            abortController: null
+        };
+
+        // --- Initialization ---
+        window.onload = () => {
+            loadState();
+            applyTheme();
+            
+            // Check if there are no chats
+            if (state.chats.length === 0) {
+                createNewChat(false); // Create silently without immediate render
+            } else if (!state.currentChatId) {
+                state.currentChatId = state.chats[0].id;
+            }
+
+            renderChatList();
+            renderCurrentChat();
+            updateModelDisplay();
+            
+            // Configure marked.js safely for modern versions
+            if (typeof marked.use === 'function') {
+                marked.use({ breaks: true, gfm: true });
+            }
+
+            // Reveal app, hide loader
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('app').classList.remove('hidden');
+            document.getElementById('app').classList.add('flex');
+            
+            // Initial textarea resize
+            autoResizeTextarea(document.getElementById('message-input'));
+
+            // If no API key, kindly suggest setting it
+            if (!state.apiKey) {
+                setTimeout(() => openModal('settings-modal'), 500);
+            }
+        };
+
+        // --- Storage Management ---
+        function loadState() {
+            try {
+                const stored = localStorage.getItem('universalAiChatState');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    state = { ...state, ...parsed };
+                } else {
+                    // Fallback to older individual keys if state object not found
+                    state.apiKey = localStorage.getItem('openRouterApiKey') || '';
+                    state.model = localStorage.getItem('openRouterModel') || DEFAULT_MODEL;
+                    state.systemPrompt = localStorage.getItem('aiSystemPrompt') || '';
+                    state.theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                    state.chats = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+                }
+                
+                // Ensure inputs match state
+                document.getElementById('api-key-input').value = state.apiKey;
+                document.getElementById('model-input').value = state.model;
+                document.getElementById('system-prompt-input').value = state.systemPrompt;
+            } catch (e) {
+                console.error("Error loading state:", e);
+            }
+        }
+
+        function saveState() {
+            localStorage.setItem('universalAiChatState', JSON.stringify(state));
+        }
+
+        // --- Theme Management ---
+        function toggleTheme() {
+            state.theme = state.theme === 'dark' ? 'light' : 'dark';
+            applyTheme();
+            saveState();
+        }
+
+        function applyTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            
+            if (state.theme === 'dark') {
+                html.classList.add('dark');
+                icon.className = 'fa-solid fa-sun w-5 text-center text-yellow-400';
+                text.textContent = 'Light Mode';
+            } else {
+                html.classList.remove('dark');
+                icon.className = 'fa-solid fa-moon w-5 text-center';
+                text.textContent = 'Dark Mode';
+            }
+        }
+
+        // --- UI & Modals ---
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function autoResizeTextarea(el) {
+            el.style.height = 'auto';
+            el.style.height = el.scrollHeight + 'px';
+            if (el.value === '') {
+                el.style.height = '44px';
+            }
+        }
+
+        function updateModelDisplay() {
+            document.getElementById('current-model-display').textContent = state.model || DEFAULT_MODEL;
+        }
+
+        function prefillInput(text) {
+            const input = document.getElementById('message-input');
+            input.value = text;
+            autoResizeTextarea(input);
+            input.focus();
+        }
+
+        // --- Settings ---
+        function saveSettings() {
+            const key = document.getElementById('api-key-input').value.trim();
+            const mod = document.getElementById('model-input').value.trim();
+            
+            if (!key) {
+                alert("API Key is required to send messages.");
+            }
+            
+            state.apiKey = key;
+            state.model = mod || DEFAULT_MODEL;
+            saveState();
+            updateModelDisplay();
+            closeModal('settings-modal');
+        }
+
+        function saveSystemPrompt() {
+            state.systemPrompt = document.getElementById('system-prompt-input').value.trim();
+            saveState();
+            closeModal('system-prom
