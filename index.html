@@ -164,7 +164,7 @@
                     <h2 class="text-3xl font-bold mb-2">Hello there.</h2>
                     <p class="text-gray-500 dark:text-gray-400 mb-6">How can I help you today?</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-                        <button onclick="prefillInput('Write a short HTML boilerplate')" class="p-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Write a short HTML boilerplate</button>
+                        <button onclick="prefillInput('Write a short poem about AI')" class="p-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Write a short poem about AI</button>
                         <button onclick="prefillInput('Explain quantum computing to a 5 year old')" class="p-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Explain quantum computing</button>
                     </div>
                 </div>
@@ -272,10 +272,11 @@
             renderCurrentChat();
             updateModelDisplay();
             
-            // Configure marked.js safely for modern versions
-            if (typeof marked.use === 'function') {
-                marked.use({ breaks: true, gfm: true });
-            }
+            // Configure marked.js
+            marked.setOptions({
+                breaks: true,
+                gfm: true
+            });
 
             // Reveal app, hide loader
             document.getElementById('loading').style.display = 'none';
@@ -398,4 +399,680 @@
         function saveSystemPrompt() {
             state.systemPrompt = document.getElementById('system-prompt-input').value.trim();
             saveState();
-            closeModal('system-prom
+            closeModal('system-prompt-modal');
+        }
+
+     // --- Chat Management ---
+
+        function createId() {
+
+            return Date.now().toString(36) + Math.random().toString(36).substring(2);
+
+        }
+
+
+
+        function createNewChat(render = true) {
+
+            const newChat = {
+
+                id: createId(),
+
+                title: 'New Chat',
+
+                messages: []
+
+            };
+
+            state.chats.unshift(newChat);
+
+            state.currentChatId = newChat.id;
+
+            saveState();
+
+            
+
+            if (render) {
+
+                renderChatList();
+
+                renderCurrentChat();
+
+                if (window.innerWidth < 768) toggleSidebar(); // close sidebar on mobile
+
+            }
+
+        }
+
+
+
+        function selectChat(id) {
+
+            if (state.isGenerating) return; // Prevent switch during generation
+
+            state.currentChatId = id;
+
+            saveState();
+
+            renderChatList();
+
+            renderCurrentChat();
+
+            if (window.innerWidth < 768) toggleSidebar();
+
+        }
+
+
+
+        function deleteChat(id, event) {
+
+            event.stopPropagation();
+
+            if(confirm("Are you sure you want to delete this chat?")) {
+
+                state.chats = state.chats.filter(c => c.id !== id);
+
+                if (state.currentChatId === id) {
+
+                    state.currentChatId = state.chats.length > 0 ? state.chats[0].id : null;
+
+                    if (!state.currentChatId) createNewChat(false);
+
+                }
+
+                saveState();
+
+                renderChatList();
+
+                renderCurrentChat();
+
+            }
+
+        }
+
+
+
+        function renameChat(id, event) {
+
+            event.stopPropagation();
+
+            const chat = state.chats.find(c => c.id === id);
+
+            if (!chat) return;
+
+            const newTitle = prompt("Enter new title:", chat.title);
+
+            if (newTitle !== null && newTitle.trim() !== "") {
+
+                chat.title = newTitle.trim();
+
+                saveState();
+
+                renderChatList();
+
+                if (state.currentChatId === id) {
+
+                    document.getElementById('current-chat-title').textContent = chat.title;
+
+                }
+
+            }
+
+        }
+
+
+
+        // --- Rendering ---
+
+        function renderChatList() {
+
+            const listEl = document.getElementById('chat-list');
+
+            listEl.innerHTML = '';
+
+
+
+            state.chats.forEach(chat => {
+
+                const isActive = chat.id === state.currentChatId;
+
+                const li = document.createElement('div');
+
+                li.className = `group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`;
+
+                li.onclick = () => selectChat(chat.id);
+
+                
+
+                li.innerHTML = `
+
+                    <div class="flex items-center gap-3 overflow-hidden">
+
+                        <i class="fa-regular fa-message flex-shrink-0"></i>
+
+                        <span class="truncate text-sm font-medium">${escapeHTML(chat.title)}</span>
+
+                    </div>
+
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+
+                        <button onclick="renameChat('${chat.id}', event)" class="p-1.5 rounded hover:bg-black/10 dark:hover:bg-white/10 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+
+                            <i class="fa-solid fa-pen text-xs"></i>
+
+                        </button>
+
+                        <button onclick="deleteChat('${chat.id}', event)" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-500 hover:text-red-500">
+
+                            <i class="fa-solid fa-trash text-xs"></i>
+
+                        </button>
+
+                    </div>
+
+                `;
+
+                listEl.appendChild(li);
+
+            });
+
+        }
+
+
+
+        function renderCurrentChat() {
+
+            const container = document.getElementById('messages-container');
+
+            const welcomeScreen = document.getElementById('welcome-screen');
+
+            const chat = state.chats.find(c => c.id === state.currentChatId);
+
+
+
+            document.getElementById('current-chat-title').textContent = chat ? chat.title : 'New Chat';
+
+
+
+            // Clear dynamic messages
+
+            const existingMsgs = container.querySelectorAll('.message-wrapper');
+
+            existingMsgs.forEach(m => m.remove());
+
+
+
+            if (!chat || chat.messages.length === 0) {
+
+                welcomeScreen.style.display = 'flex';
+
+            } else {
+
+                welcomeScreen.style.display = 'none';
+
+                chat.messages.forEach(msg => {
+
+                    appendMessageToDOM(msg.role, msg.content, false);
+
+                });
+
+                scrollToBottom();
+
+            }
+
+        }
+
+
+
+        function appendMessageToDOM(role, content, isStreaming = false) {
+
+            const container = document.getElementById('messages-container');
+
+            document.getElementById('welcome-screen').style.display = 'none';
+
+
+
+            const wrapper = document.createElement('div');
+
+            wrapper.className = `message-wrapper w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'} max-w-3xl mx-auto`;
+
+            
+
+            // Create a specific ID for the streaming target
+
+            const contentId = isStreaming ? `stream-target-${Date.now()}` : '';
+
+
+
+            let innerHTML = '';
+
+            if (role === 'user') {
+
+                innerHTML = `
+
+                    <div class="max-w-[85%] bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-tr-sm px-5 py-3 text-[15px] shadow-sm whitespace-pre-wrap break-words border border-gray-200 dark:border-gray-700">
+
+                        ${escapeHTML(content)}
+
+                    </div>
+
+                `;
+
+            } else {
+
+                innerHTML = `
+
+                    <div class="max-w-full md:max-w-[90%] flex gap-4 w-full">
+
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex-shrink-0 flex items-center justify-center shadow-sm mt-1">
+
+                            <i class="fa-solid fa-sparkles text-white text-xs"></i>
+
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+
+                            <div id="${contentId}" class="prose dark:prose-invert max-w-none text-[15px] text-gray-800 dark:text-gray-200 leading-relaxed ${isStreaming ? 'typing-cursor' : ''}">
+
+                                ${isStreaming ? '' : renderMarkdown(content)}
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            }
+
+
+
+            wrapper.innerHTML = innerHTML;
+
+            container.appendChild(wrapper);
+
+            scrollToBottom();
+
+            
+
+            return contentId;
+
+        }
+
+
+
+        function scrollToBottom() {
+
+            const container = document.getElementById('messages-container');
+
+            container.scrollTop = container.scrollHeight;
+
+        }
+
+
+
+        // --- Interaction Logic ---
+
+        function handleEnter(e) {
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+
+                e.preventDefault();
+
+                sendMessage();
+
+            }
+
+        }
+
+
+
+        async function sendMessage() {
+
+            if (state.isGenerating) return;
+
+
+
+            const inputEl = document.getElementById('message-input');
+
+            const message = inputEl.value.trim();
+
+            if (!message) return;
+
+
+
+            if (!state.apiKey) {
+
+                openModal('settings-modal');
+
+                alert("Please set your OpenRouter API Key first.");
+
+                return;
+
+            }
+
+
+
+            // 1. Update UI and State for User Message
+
+            inputEl.value = '';
+
+            autoResizeTextarea(inputEl);
+
+            
+
+            const chat = state.chats.find(c => c.id === state.currentChatId);
+
+            if (!chat) return;
+
+
+
+            chat.messages.push({ role: 'user', content: message });
+
+            
+
+            // Generate title if it's the first message
+
+            if (chat.messages.length === 1) {
+
+                chat.title = message.length > 30 ? message.substring(0, 30) + '...' : message;
+
+                document.getElementById('current-chat-title').textContent = chat.title;
+
+                renderChatList();
+
+            }
+
+            saveState();
+
+
+
+            appendMessageToDOM('user', message);
+
+
+
+            // 2. Setup AI Response streaming
+
+            toggleInputState(true);
+
+            const targetId = appendMessageToDOM('assistant', '', true);
+
+            const targetEl = document.getElementById(targetId);
+
+
+
+            // Construct payload
+
+            const apiMessages = [];
+
+            if (state.systemPrompt) {
+
+                apiMessages.push({ role: 'system', content: state.systemPrompt });
+
+            }
+
+            apiMessages.push(...chat.messages);
+
+
+
+            state.abortController = new AbortController();
+
+
+
+            try {
+
+                const response = await fetch(API_ENDPOINT, {
+
+                    method: 'POST',
+
+                    headers: {
+
+                        'Authorization': `Bearer ${state.apiKey}`,
+
+                        'Content-Type': 'application/json',
+
+                    },
+
+                    body: JSON.stringify({
+
+                        model: state.model || DEFAULT_MODEL,
+
+                        messages: apiMessages,
+
+                        stream: true
+
+                    }),
+
+                    signal: state.abortController.signal
+
+                });
+
+
+
+                if (!response.ok) {
+
+                    const errText = await response.text();
+
+                    throw new Error(`API Error (${response.status}): ${errText}`);
+
+                }
+
+
+
+                const reader = response.body.getReader();
+
+                const decoder = new TextDecoder("utf-8");
+
+                let fullContent = "";
+
+                let buffer = "";
+
+
+
+                while (true) {
+
+                    const { done, value } = await reader.read();
+
+                    if (done) break;
+
+
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split('\n');
+
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
+
+
+                    for (const line of lines) {
+
+                        if (line.trim() === '') continue;
+
+                        if (line.startsWith('data: ')) {
+
+                            const dataStr = line.substring(6).trim();
+
+                            if (dataStr === '[DONE]') continue;
+
+                            
+
+                            try {
+
+                                const data = JSON.parse(dataStr);
+
+                                const delta = data.choices?.[0]?.delta?.content;
+
+                                if (delta) {
+
+                                    fullContent += delta;
+
+                                    // Update DOM efficiently
+
+                                    targetEl.innerHTML = renderMarkdown(fullContent);
+
+                                    scrollToBottom();
+
+                                }
+
+                            } catch (e) {
+
+                                console.warn("Failed to parse chunk", line);
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+
+
+                // Finish
+
+                targetEl.classList.remove('typing-cursor');
+
+                chat.messages.push({ role: 'assistant', content: fullContent });
+
+                saveState();
+
+
+
+            } catch (err) {
+
+                if (err.name === 'AbortError') {
+
+                    // Handled intentionally
+
+                    const partialText = targetEl.innerText + "\n\n*[Stopped by user]*";
+
+                    targetEl.innerHTML = renderMarkdown(partialText);
+
+                    chat.messages.push({ role: 'assistant', content: partialText });
+
+                    saveState();
+
+                } else {
+
+                    console.error("Generation Error:", err);
+
+                    targetEl.classList.remove('typing-cursor');
+
+                    targetEl.innerHTML = `<span class="text-red-500 font-medium"><i class="fa-solid fa-triangle-exclamation"></i> Error connecting to API: ${err.message}</span>`;
+
+                    // Remove user msg from history on failure to allow retry
+
+                    chat.messages.pop(); 
+
+                    saveState();
+
+                }
+
+            } finally {
+
+                targetEl.classList.remove('typing-cursor');
+
+                toggleInputState(false);
+
+            }
+
+        }
+
+
+
+        function stopGeneration() {
+
+            if (state.abortController) {
+
+                state.abortController.abort();
+
+            }
+
+        }
+
+
+
+        function toggleInputState(isGenerating) {
+
+            state.isGenerating = isGenerating;
+
+            const inputEl = document.getElementById('message-input');
+
+            const sendBtn = document.getElementById('send-button');
+
+            const stopBtn = document.getElementById('stop-button');
+
+
+
+            if (isGenerating) {
+
+                sendBtn.classList.add('hidden');
+
+                stopBtn.classList.remove('hidden');
+
+            } else {
+
+                sendBtn.classList.remove('hidden');
+
+                stopBtn.classList.add('hidden');
+
+                inputEl.focus();
+
+            }
+
+        }
+
+
+
+        // --- Utils ---
+
+        function renderMarkdown(text) {
+
+            try {
+
+                return marked.parse(text || "");
+
+            } catch(e) {
+
+                return escapeHTML(text);
+
+            }
+
+        }
+
+
+
+        function escapeHTML(str) {
+
+            if (!str) return "";
+
+            return str.replace(/[&<>'"]/g, 
+
+                tag => ({
+
+                    '&': '&amp;',
+
+                    '<': '&lt;',
+
+                    '>': '&gt;',
+
+                    "'": '&#39;',
+
+                    '"': '&quot;'
+
+                }[tag])
+
+            );
+
+        }
+
+
+
+    </script>
+
+</body>
+
+</html>
+
